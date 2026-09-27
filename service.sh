@@ -1,144 +1,20 @@
-# service.sh
-MODDIR="${0%/*}"
+#!/system/bin/sh
 
-STATE_FILE="/data/local/tmp/sensor_privacy_state"
-
-#============================
-# Gera a notificação do estado atual
-# notify() {
-    # _TITLE="$1"
-    # _MSG="$2"
-    # su -lp 2000 -c "cmd notification post -S bigtext -t '$_TITLE' 'sensor_privacy' '$_MSG'"
-# }
-#============================
-
-# Obtem a versão do android para executar o módulo e alterar as permissões
-get_service_code() {
-    case "$(getprop ro.build.version.release)" in
-        13|14|15|16) echo 9 ;;
-        12)          echo 8 ;;
-        10|11)       echo 4 ;;
-        *)           echo "" ;;
-    esac
-}
-
-# Verifica o estado da tela para detectar se está desativada ou não
-get_screen_state() {
-    _PWR=$(dumpsys power 2>/dev/null)
-    if echo "$_PWR" | grep -qE "mWakefulness=Awake|mWakefulnessRaw=Awake"; then
-        if dumpsys window 2>/dev/null | grep -qE "mShowingDream=true|mDreamingLockscreen=true"; then
-            echo "OFF"
-            return
-        fi
-        echo "ON"
-        return
-    fi
-    for BL in /sys/class/leds/lcd-backlight/brightness /sys/class/backlight/panel0-backlight/brightness; do
-        if [ -f "$BL" ]; then
-            _BRI=$(cat "$BL" 2>/dev/null)
-            [ "${_BRI:-0}" -gt 0 ] && echo "ON" && return
-        fi
-    done
-    echo "OFF"
-}
-
-# ============================
-# Função que define e ativa o modo economia de energia ao ligar a tela
-# set_battery_saver() {
-    # $1: 1 = ativar, 0 = desativar
-    # settings put global low_power "$1" 2>/dev/null
-# }
-# ============================
-
-# Função que define e desiga a localização ao bloquear a tela
-set_location() {
-    # $1: 1 = ativar, 0 = desativar
-    settings put secure location_mode "$1" 2>/dev/null
-}
-
-# Função de desliga o bletooth ao desligar a tela. Por quê? porque eu quero kkkk
-set_bluetooth() {
-    # $1: disable = desativar, enable = ativar
-    cmd bluetooth_manager disable
-}
-
-toggle_sensor_privacy() {
-    MAX_ATTEMPTS=80
-    ATTEMPT=0
-
-    while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
-        if service list | grep -q "sensor_privacy"; then
-            break
-        fi
-        sleep 1
-        ATTEMPT=$((ATTEMPT + 1))
-    done
-
-    if [ $ATTEMPT -eq $MAX_ATTEMPTS ]; then
-        notify "Sensor Privacy" "Erro: sensor_privacy não disponível"
-        return 1
-    fi
-
-    SERVICE_CODE=$(get_service_code)
-    [ -z "$SERVICE_CODE" ] && notify "Sensor Privacy" "Erro: versão não reconhecida" && return 1
-
-    if [ -f "$STATE_FILE" ]; then
-        service call sensor_privacy $SERVICE_CODE i32 0
-        rm -f "$STATE_FILE"
-        notify "Sensor Privacy" "Microfone e câmera LIBERADOS"
-    else
-        service call sensor_privacy $SERVICE_CODE i32 1
-        echo "1" > "$STATE_FILE"
-        notify "Sensor Privacy" "Microfone e câmera BLOQUEADOS"
-    fi
-}
-
-# Função que bloqueia os sensores, camera e microfone ao bloquear a tela
-lock_sensors() {
-    SERVICE_CODE=$(get_service_code)
-    [ -z "$SERVICE_CODE" ] && return 1
-
-    if [ ! -f "$STATE_FILE" ]; then
-        service call sensor_privacy $SERVICE_CODE i32 1
-        echo "1" > "$STATE_FILE"
-        # set_battery_saver 1
-        set_location 0
-        set_bluetooth # Tenho pena de quem usa fones bluetooth KKKKKK
-        # notify "Sensor Privacy" "Tela desligada — microfone e câmera BLOQUEADOS, economia de bateria ATIVADA"
-    fi
-}
-
-# Função que desbloqueia os sensores ao desbloquear a tela
-unlock_sensors() {
-    SERVICE_CODE=$(get_service_code)
-    [ -z "$SERVICE_CODE" ] && return 1
-
-    if [ -f "$STATE_FILE" ]; then
-        service call sensor_privacy $SERVICE_CODE i32 0
-        rm -f "$STATE_FILE"
-        # set_battery_saver 0
-        # notify "Sensor Privacy" "Tela ligada — microfone e câmera LIBERADOS, economia de bateria DESATIVADA"
-    fi
-}
-
-# Bloqueia no boot se a tela já estiver desligada
-if [ "$(get_screen_state)" = "OFF" ]; then
-    lock_sensors
-fi
-
-PREV_STATE=$(get_screen_state)
-
-while true; do
-    CURR_STATE=$(get_screen_state)
-
-    if [ "$CURR_STATE" = "ON" ] && [ "$PREV_STATE" = "OFF" ]; then
-        unlock_sensors
-        POLL_INTERVAL=2
-    elif [ "$CURR_STATE" = "OFF" ] && [ "$PREV_STATE" = "ON" ]; then
-        lock_sensors
-        POLL_INTERVAL=5
-    fi
-
-    PREV_STATE="$CURR_STATE"
-    sleep "${POLL_INTERVAL:-2}"
+# Ativa a função ao dar boot no sistema
+while ! service list | grep -q sensor_privacy; do
+  sleep 0.1
 done
+
+# Obtém a versão do android
+ANDROID_VERSION=$(getprop ro.build.version.release)
+case "$ANDROID_VERSION" in
+  13|14|15|16|17)
+    service call sensor_privacy 9 i32 1
+    ;;
+  12)
+    service call sensor_privacy 8 i32 1
+    ;;
+  10|11)
+    service call sensor_privacy 4 i32 1
+    ;;
+esac
