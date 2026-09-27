@@ -1,5 +1,5 @@
-id=TurnOnPrivacy
-name=Turn On Privacy
-author=Tenório & WhoFoss
+id=AlwaysOffSensor
+name=Always Off Sensors
+author=Tenório (rebirth) & WhoFoss
 description=Automatically turn off device sensors on boot
 updateJson=
